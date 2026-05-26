@@ -20,6 +20,7 @@ const doUserTask = async (cloudClient, logger) => {
   const result = await cloudClient.userSign()
   const netdiskBonus = result.isSign? 0: result.netdiskBonus
   logger.info(`个人签到任务: 获得 ${netdiskBonus}M 空间`);
+  return { netdiskBonus, isSign: result.isSign };
 };
 
 const run = async (userName, password, userSizeInfoMap, logger) => {
@@ -38,7 +39,8 @@ const run = async (userName, password, userSizeInfoMap, logger) => {
         userSizeInfo: beforeUserSizeInfo,
         logger,
       });
-      await Promise.all([doUserTask(cloudClient, logger)]);
+      const signResult = await doUserTask(cloudClient, logger);
+      return signResult;
     } catch (e) {
       if (e.response) {
         logger.log(`请求失败: ${e.response.statusCode}, ${e.response.body}`);
@@ -61,13 +63,15 @@ const run = async (userName, password, userSizeInfoMap, logger) => {
 async function main() {
   //  用于统计实际容量变化
   const userSizeInfoMap = new Map();
+  const signResults = [];
   for (let index = 0; index < accounts.length; index++) {
     const account = accounts[index];
     const { userName, password } = account;
     const userNameInfo = mask(userName, 3, 7);
     const logger = log4js.getLogger(userName);
     logger.addContext("user", userNameInfo);
-    await run(userName, password, userSizeInfoMap, logger);
+    const signResult = await run(userName, password, userSizeInfoMap, logger);
+    signResults.push({ userName: userNameInfo, ...signResult });
   }
 
   //数据汇总
@@ -101,11 +105,16 @@ async function main() {
       ).toFixed(2)}G`
     );
   }
+
+  return signResults;
 }
 
+const pushFeishu = require("./push/feishuPush");
+
 (async () => {
+  let signResults = [];
   try {
-    await main();
+    signResults = await main();
     //等待日志文件写入
     await delay(1000);
   } finally {
@@ -113,6 +122,7 @@ async function main() {
     const events = recording.replay();
     const content = events.map((e) => `${e.data.join("")}`).join("  \n");
     push("天翼云盘自动签到任务", logs + content);
+    pushFeishu(signResults);
     recording.erase();
     cleanLogs();
   }
