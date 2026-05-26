@@ -7,18 +7,18 @@ logger.addContext("user", "feishu");
 
 const buildCard = (signResults) => {
   const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-  const allSuccess = signResults.length > 0 && signResults.every(r => r && !r.error);
+  const validResults = signResults.filter(r => r);
+  const allSuccess = validResults.length > 0 && validResults.every(r => !r.error);
 
   const elements = [];
 
-  if (!signResults.length) {
+  if (!validResults.length) {
     elements.push({
       tag: "div",
       text: { tag: "lark_md", content: "⚠️ 未获取到签到结果" },
     });
   } else {
-    for (const r of signResults) {
-      if (!r) continue;
+    for (const r of validResults) {
       if (r.error) {
         elements.push({
           tag: "div",
@@ -54,9 +54,12 @@ const buildCard = (signResults) => {
 
 // 飞书自定义机器人 Webhook
 const sendWebhook = (card) => {
-  if (!feishu.webhookUrl) return;
+  if (!feishu.webhookUrl) {
+    logger.info("未配置飞书Webhook，跳过");
+    return Promise.resolve();
+  }
 
-  superagent
+  return superagent
     .post(feishu.webhookUrl)
     .send({ msg_type: "interactive", card })
     .then(() => {
@@ -69,9 +72,12 @@ const sendWebhook = (card) => {
 
 // 飞书应用机器人
 const sendAppMessage = (card) => {
-  if (!feishu.appId || !feishu.appSecret || !feishu.receiveId) return;
+  if (!feishu.appId || !feishu.appSecret || !feishu.receiveId) {
+    logger.info("未配置飞书应用机器人，跳过");
+    return Promise.resolve();
+  }
 
-  superagent
+  return superagent
     .post("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal")
     .send({ app_id: feishu.appId, app_secret: feishu.appSecret })
     .then((res) => {
@@ -100,10 +106,11 @@ const sendAppMessage = (card) => {
     });
 };
 
-const pushFeishu = (signResults) => {
+const pushFeishu = async (signResults) => {
   const card = buildCard(signResults || []);
-  sendWebhook(card);
-  sendAppMessage(card);
+  logger.info(`飞书推送开始，共 ${signResults.length} 个账号结果`);
+  await Promise.all([sendWebhook(card), sendAppMessage(card)]);
+  logger.info("飞书推送完毕");
 };
 
 module.exports = pushFeishu;

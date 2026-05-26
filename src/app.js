@@ -71,7 +71,7 @@ async function main() {
     const logger = log4js.getLogger(userName);
     logger.addContext("user", userNameInfo);
     const signResult = await run(userName, password, userSizeInfoMap, logger);
-    signResults.push({ userName: userNameInfo, ...signResult });
+    signResults.push({ userName: userNameInfo, error: null, ...signResult });
   }
 
   //数据汇总
@@ -122,7 +122,8 @@ const pushFeishu = require("./push/feishuPush");
     const events = recording.replay();
     const content = events.map((e) => `${e.data.join("")}`).join("  \n");
     push("天翼云盘自动签到任务", logs + content);
-    pushFeishu(signResults);
+    await pushFeishu(signResults);
+    await delay(2000);
     recording.erase();
     cleanLogs();
   }
